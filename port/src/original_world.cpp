@@ -3009,59 +3009,44 @@ void render_original_floor_edges(const OriginalResources& resources,
   // the native port does not depend on a process-local WinG staging bitmap.
   const IndexedDib floor_bank(resources.find("BITMAP", 1001));
   const IndexedDib roof(resources.find("BITMAP", 1002));
-  const IndexedDib type3_bank(resources.find("BITMAP", 1193));
-  const IndexedDib type4_bank(resources.find("BITMAP", 1259));
-  const IndexedDib padding(resources.find("BITMAP", 5000));
+  const IndexedDib stairs(resources.find("BITMAP", 1069));
   if (floor_bank.view.width != 112 || floor_bank.height != 36 ||
       roof.view.width != 36 || roof.height != 36 ||
-      type3_bank.view.width != 256 || type3_bank.height != 24 ||
-      type4_bank.view.width != 384 || type4_bank.height != 24 ||
-      padding.view.width != 128 || padding.height != 12) {
+      stairs.view.width != 48 || stairs.height != 36) {
     throw std::runtime_error("Original floor-edge source DIB has invalid dimensions");
   }
 
-  std::array<std::uint8_t, 36U * 24U> standard_left{};
-  std::array<std::uint8_t, 36U * 24U> standard_right{};
-  std::array<std::uint8_t, 36U * 56U> ground_left{};
-  std::array<std::uint8_t, 36U * 56U> ground_right{};
+  // Both edge pieces are one story tall and sit immediately outside the
+  // floor's own span, which is what the draw offsets below say: -24 for the
+  // emergency stairs and -56 for the ground entrance.  BITMAP/1069 is 48 wide
+  // and holds the two 24-wide staircases; BITMAP/1001 is 112 wide and holds
+  // the two 56-wide entrance canopies.
+  std::array<std::uint8_t, 24U * 36U> standard_left{};
+  std::array<std::uint8_t, 24U * 36U> standard_right{};
+  std::array<std::uint8_t, 56U * 36U> ground_left{};
+  std::array<std::uint8_t, 56U * 36U> ground_right{};
   std::array<std::uint8_t, 36U * 36U> roof_fragment{};
   const auto build_standard = [&](auto& fragment, int local_x) {
-    for (int y = 0; y < 24; ++y) {
-      for (int x = 0; x < 36; ++x) {
-        fragment[static_cast<std::size_t>(y) * 36U + x] =
-            y < 12
-                ? padding.sample_index((local_x + x) % padding.view.width, y)
-                : type4_bank.sample_index(local_x + x, y - 12);
+    for (int y = 0; y < 36; ++y) {
+      for (int x = 0; x < 24; ++x) {
+        fragment[static_cast<std::size_t>(y) * 24U + x] =
+            stairs.sample_index(local_x + x, y);
       }
     }
   };
-  // Sheet x=736/760 lies at local x=256/280 in BITMAP/1259. Its twelve-row
-  // pad is tiled by 11f8:3ef3 from BITMAP/5000 starting at BITMAP/1259's
-  // sheet origin.
-  build_standard(standard_left, 256);
-  build_standard(standard_right, 280);
+  build_standard(standard_left, 0);
+  build_standard(standard_right, 24);
 
-  const auto build_ground = [&](auto& fragment, int floor_local_x,
-                                int type3_local_x) {
-    for (int y = 0; y < 56; ++y) {
-      for (int x = 0; x < 36; ++x) {
-        std::uint8_t index{};
-        if (y < 36) {
-          index = floor_bank.sample_index(floor_local_x + x, y);
-        } else if (y < 48) {
-          index = padding.sample_index(
-              (type3_local_x + x) % padding.view.width, y - 36);
-        } else {
-          index = type3_bank.sample_index(type3_local_x + x, y - 48);
-        }
-        fragment[static_cast<std::size_t>(y) * 36U + x] = index;
+  const auto build_ground = [&](auto& fragment, int floor_local_x) {
+    for (int y = 0; y < 36; ++y) {
+      for (int x = 0; x < 56; ++x) {
+        fragment[static_cast<std::size_t>(y) * 56U + x] =
+            floor_bank.sample_index(floor_local_x + x, y);
       }
     }
   };
-  // Sheet x=96/152 crosses the type-0 row, the twelve-row type-3 padding,
-  // and BITMAP/1193 at local x=64/120.
-  build_ground(ground_left, 0, 64);
-  build_ground(ground_right, 56, 120);
+  build_ground(ground_left, 0);
+  build_ground(ground_right, 56);
   for (int y = 0; y < 36; ++y) {
     for (int x = 0; x < 36; ++x) {
       roof_fragment[static_cast<std::size_t>(y) * 36U + x] =
@@ -3077,20 +3062,20 @@ void render_original_floor_edges(const OriginalResources& resources,
     const int destination_y =
         (119 - static_cast<int>(floor_number)) * kOriginalFloorHeight - view_y;
     draw_original_masked_indexed_fragment(
-        standard_left, 36, 24, palette,
+        standard_left, 24, 36, palette,
         static_cast<int>(floor.left_edge) * kOriginalCellWidth - view_x - 24,
         destination_y, raster);
     draw_original_masked_indexed_fragment(
-        standard_right, 36, 24, palette,
+        standard_right, 24, 36, palette,
         static_cast<int>(floor.right_edge) * kOriginalCellWidth - view_x,
         destination_y, raster);
     if (floor_number == 10U) {
       draw_original_masked_indexed_fragment(
-          ground_left, 36, 56, palette,
+          ground_left, 56, 36, palette,
           static_cast<int>(floor.left_edge) * kOriginalCellWidth - view_x - 56,
           destination_y, raster);
       draw_original_masked_indexed_fragment(
-          ground_right, 36, 56, palette,
+          ground_right, 56, 36, palette,
           static_cast<int>(floor.right_edge) * kOriginalCellWidth - view_x,
           destination_y, raster);
     }
