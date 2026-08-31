@@ -282,6 +282,10 @@ void render_original_background(const OriginalResources& resources,
       IndexedDib(resources.find("BITMAP", 850)),
   };
   const IndexedDib skyline(resources.find("BITMAP", 905));
+  // Below the ground line the world is earth, not nothing.  BITMAP/849 sits
+  // immediately before the sky strips and is exactly 32x360 - the width of a
+  // strip and the height of the whole basement region, 3960 to 4320.
+  const IndexedDib underground(resources.find("BITMAP", 849));
 
   for (int y = 0; y < raster.height; ++y) {
     const int world_y = view_y + y;
@@ -303,6 +307,10 @@ void render_original_background(const OriginalResources& resources,
       if (world_y >= 3905 && world_y < 3960) {
         color = palette[skyline.sample_index(
             positive_mod(world_x, 96), world_y - 3905)];
+      }
+      if (world_y >= 3960 && world_y < kOriginalWorldHeight) {
+        color = palette[underground.sample_index(
+            positive_mod(world_x, 32), world_y - 3960)];
       }
       raster.pixels[static_cast<std::size_t>(y) * raster.width + x] = color;
     }
