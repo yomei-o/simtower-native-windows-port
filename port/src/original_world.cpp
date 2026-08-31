@@ -2393,6 +2393,8 @@ void render_original_elevator_layer(
   }
 }
 
+bool original_source_byte_is_opaque(std::uint8_t index);
+
 void draw_original_vertical_transport_dib_frame(
     const OriginalResources& resources,
     const OriginalWorldPalette& palette,
@@ -2432,11 +2434,22 @@ void draw_original_vertical_transport_dib_frame(
         if (raster_x < 0 || raster_x >= raster.width) {
           continue;
         }
-        const auto color = y < top_padding
-            ? palette[kConstructionFillPaletteIndex]
-            : palette[strip.sample_index(source_x + x, y - top_padding)];
+        if (y >= top_padding) {
+          // The staging band these frames were composed into is copied out
+          // with index-zero transparency, like every other compositor here.
+          // Written opaquely instead, an Escalator arrives in a solid white
+          // box: its art is a diagonal on an index-zero field, and CLUT/1000
+          // resolves index zero to white.
+          const auto index = strip.sample_index(source_x + x, y - top_padding);
+          if (!original_source_byte_is_opaque(index)) {
+            continue;
+          }
+          raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
+                        raster_x] = palette[index];
+          continue;
+        }
         raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
-                      raster_x] = color;
+                      raster_x] = palette[kConstructionFillPaletteIndex];
       }
     }
     remaining -= chunk;

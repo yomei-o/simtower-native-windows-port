@@ -9187,6 +9187,8 @@ bool apply_original_debug_key(WPARAM key) {
     return true;
   }
   if (key == 'T') {
+    std::fprintf(stderr, "[tower] selected_build_type=%u command_mode=%u\n",
+                 (unsigned)g_selected_build_type, (unsigned)g_command_mode);
     std::fprintf(stderr, "[tower] rating=%u lobby_height=%u pop=%d funds=%d\n",
                  (unsigned)g_tower_document->header.rating,
                  (unsigned)g_tower_document->header.lobby_height,
