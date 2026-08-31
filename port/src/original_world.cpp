@@ -768,9 +768,18 @@ void render_original_direct_facilities(const OriginalResources& resources,
       const int destination_x =
           static_cast<int>(tenant.left) * kOriginalCellWidth - view_x;
       const int destination_y =
-          (119 - static_cast<int>(floor_index)) * kOriginalFloorHeight +
-          top_blank_rows - view_y;
-      for (int y = 0; y < graphic_height; ++y) {
+          (119 - static_cast<int>(floor_index)) * kOriginalFloorHeight -
+          view_y;
+      // A 24-row facility is bottom-aligned in a 36-row band over the staging
+      // surface's RGB(64,64,64) fill, which GDI maps to CLUT/1000 entry 14 -
+      // the same arrangement 11a0:088f gives the type-0x29 construction bank
+      // in render_original_pending_facilities.  Leaving those twelve rows
+      // untouched instead is a transparent gap above every room: visible
+      // between any two floors except one and two, where the lobby's own
+      // full-height graphic covers it.
+      constexpr std::size_t kFacilityFillPaletteIndex = 14U;
+      const std::uint32_t blank = palette[kFacilityFillPaletteIndex];
+      for (int y = 0; y < kOriginalFloorHeight; ++y) {
         const int raster_y = destination_y + y;
         if (raster_y < 0 || raster_y >= raster.height) {
           continue;
@@ -780,10 +789,12 @@ void render_original_direct_facilities(const OriginalResources& resources,
           if (raster_x < 0 || raster_x >= raster.width) {
             continue;
           }
-          const auto index =
-              source->strip.sample_index(source->source_x + x, y);
+          const std::uint32_t color = y < top_blank_rows
+              ? blank
+              : palette[source->strip.sample_index(
+                    source->source_x + x, y - top_blank_rows)];
           raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
-                        raster_x] = palette[index];
+                        raster_x] = color;
         }
       }
     }
@@ -3789,12 +3800,12 @@ original_construction_preview_rect(std::uint16_t type,
   world_x -= world_x % kOriginalCellWidth;
   int world_y = client_y + view_y;
   world_y -= world_y % kOriginalFloorHeight;
-  // Literal 11f8:3df4-3e2e: Lobby type 24 is the sole no-offset case.
-  // Every other type receives +12 after the signed 36-pixel snap, including
-  // ordinary one-story facilities, Floor, and elevator/transport tools.
-  if (type != 24U) {
-    world_y += 12;
-  }
+  // Every footprint here is a whole number of stories - 36, 72, 108, 180 - and
+  // the floors themselves sit at exact multiples of 36, so a preview that is
+  // pushed twelve pixels down straddles two of them: its top edge lands on the
+  // room's ceiling band and its bottom edge twelve pixels into the floor
+  // below.  That is what "the box is too low for everything except the lobby"
+  // looks like, the lobby having been the one type the offset skipped.
   const int left = world_x - view_x;
   const int top = world_y - view_y;
   return OriginalConstructionPreviewRect{
