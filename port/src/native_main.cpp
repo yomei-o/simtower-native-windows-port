@@ -848,6 +848,15 @@ void reset_original_command_state(bool startup_suppressed = false) {
   // has succeeded.
 }
 
+// Debugging only.  Most of the game is behind its star rating - the transport
+// catalogue opens at two stars and the rest above that - and reaching those
+// takes a real game, which makes the renderer above one star almost untestable.
+// The number keys set the rating directly and zero refills the bank.  Nothing
+// in SimTower binds a digit, so this takes nothing away.
+bool apply_original_debug_key(WPARAM key);
+extern unsigned long long g_debug_car_scans;
+extern unsigned long long g_debug_car_changes;
+
 void refresh_original_rating_command(std::uint16_t rating,
                                      std::uint16_t argument,
                                      bool command_composition_allowed = true) {
@@ -1698,6 +1707,8 @@ void run_original_idle_simulation() {
             event.direction_up,
             static_cast<std::uint32_t>(event.person_index)});
   }
+  g_debug_car_scans += elevators.cars_scanned;
+  g_debug_car_changes += elevators.cars_changed;
   world_changed = elevators.changed || world_changed;
   // Exact 1090:0551 position: 10c0:002e raises the shared repaint flag when
   // any used Stair/Escalator has a nonzero wrapping word_6+word_8 passenger
@@ -9152,6 +9163,76 @@ LRESULT apply_original_main_shutdown_message(
 }
 
 // Native message boundary for MAINWNDPROC at 1158:0000.
+unsigned long long g_debug_car_scans = 0;
+unsigned long long g_debug_car_changes = 0;
+
+bool apply_original_debug_key(WPARAM key) {
+  if (!g_tower_document) return false;
+  if (key >= '1' && key <= '6') {
+    g_tower_document->header.rating =
+        static_cast<std::uint16_t>(key - static_cast<WPARAM>('0'));
+    refresh_original_rating_command(g_tower_document->header.rating, 1U);
+    if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
+    if (g_map_window) InvalidateRect(g_map_window, nullptr, FALSE);
+    request_original_main_surface_pass(
+        simtower::OriginalMainSurfacePass::rebuild_with_sky, true);
+    return true;
+  }
+  if (key == 'E') {
+    std::fprintf(stderr, "[elev] rating=%u active=%u entries=%zu\n",
+                 (unsigned)g_tower_document->header.rating,
+                 (unsigned)g_active_command_rating,
+                 simtower::original_command_catalog(
+                     g_resources,
+                     active_original_command_rating(g_active_command_rating))
+                     .size());
+    std::fprintf(stderr, "[elev] frame_time=%u day=%u scans=%llu changes=%llu\n",
+                 (unsigned)g_tower_document->header.frame_time,
+                 (unsigned)g_tower_document->header.current_day,
+                 (unsigned long long)g_debug_car_scans,
+                 (unsigned long long)g_debug_car_changes);
+    for (std::size_t i = 0; i < g_tower_document->elevators.size(); ++i) {
+      const auto& e = g_tower_document->elevators[i];
+      if (e.used == 0U) continue;
+      std::fprintf(stderr,
+                   "[elev] %zu x=%u type=%u cap=%u cars=%u shown=%u %d..%d\n",
+                   i, (unsigned)e.x, (unsigned)e.type, (unsigned)e.capacity,
+                   (unsigned)e.cars, (unsigned)e.word_3c,
+                   (int)e.bottom_floor, (int)e.top_floor);
+      for (std::size_t c = 0; c < e.car_records.size(); ++c) {
+        const auto& b = e.car_records[c].exact_bytes;
+        if (b[15] == std::byte{0}) continue;
+        const auto sb = [&](std::size_t k) {
+          return (int)(std::int8_t)std::to_integer<std::uint8_t>(b[k]);
+        };
+        std::fprintf(stderr,
+                     "[elev]   car %zu pos=%d settle=%d door=%d pax=%d dir=%d "
+                     "target=%d prev=%d flag7=%d mode=%d home=%d\n",
+                     c, sb(0), sb(1), sb(2), sb(3), sb(4), sb(5), sb(6), sb(7),
+                     sb(14),
+                     (int)(std::int8_t)std::to_integer<std::uint8_t>(
+                         e.car_home_floors[c]));
+      }
+      for (const auto& f : e.floor_records) {
+        const int up = (int)(std::int8_t)std::to_integer<std::uint8_t>(
+            f.exact_bytes[0]);
+        const int down = (int)(std::int8_t)std::to_integer<std::uint8_t>(
+            f.exact_bytes[2]);
+        if (up == 0 && down == 0) continue;
+        std::fprintf(stderr, "[elev]   floor %d waiting up=%d down=%d\n",
+                     (int)f.floor, up, down);
+      }
+    }
+    return true;
+  }
+  if (key == '0') {
+    g_tower_document->header.balance = 1000000000;
+    if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
+    return true;
+  }
+  return false;
+}
+
 LRESULT CALLBACK main_window_proc(HWND window, UINT message,
                                   WPARAM wparam, LPARAM lparam) {
   // Message set and dispatch order are recovered from the 22-entry parallel
@@ -10007,6 +10088,14 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR command_line, int) {
     MSG message{};
     for (;;) {
       if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+        // Debugging: see apply_original_debug_key.  Taken here rather than in a
+        // window procedure because the focus is usually in one of the auxiliary
+        // windows, and a debug key that depends on which one is no use.
+        if (message.message == WM_KEYDOWN &&
+            !original_main_modal_input_locked() &&
+            apply_original_debug_key(message.wParam)) {
+          continue;
+        }
         // 1258:00bc-015c gives DS:31a0 Elevator Control precedence over
         // DS:31a4's active modal and gives either the accelerator attempt
         // before IsDialogMessage. Only the no-dialog branch targets Main.
