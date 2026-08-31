@@ -744,6 +744,9 @@ void render_original_direct_facilities(const OriginalResources& resources,
   // transient cache sentinel for types 18/20/21/29/34; the native direct
   // raster skips that disposable WinG cache while preserving its opaque cell
   // copy and layer position, even when the tenant status byte is zero.
+  const IndexedDib floor_atlas(resources.find("BITMAP", 1000));
+  constexpr int kFloorCeilingCell = 2;
+
   for (std::size_t floor_index = 0; floor_index < document.floors.size();
        ++floor_index) {
     for (const auto& tenant : document.floors[floor_index].tenants) {
@@ -770,15 +773,16 @@ void render_original_direct_facilities(const OriginalResources& resources,
       const int destination_y =
           (119 - static_cast<int>(floor_index)) * kOriginalFloorHeight -
           view_y;
-      // A 24-row facility is bottom-aligned in a 36-row band over the staging
-      // surface's RGB(64,64,64) fill, which GDI maps to CLUT/1000 entry 14 -
-      // the same arrangement 11a0:088f gives the type-0x29 construction bank
-      // in render_original_pending_facilities.  Leaving those twelve rows
-      // untouched instead is a transparent gap above every room: visible
-      // between any two floors except one and two, where the lobby's own
-      // full-height graphic covers it.
-      constexpr std::size_t kFacilityFillPaletteIndex = 14U;
-      const std::uint32_t blank = palette[kFacilityFillPaletteIndex];
+      // A 24-row facility is bottom-aligned in a 36-row band and the twelve
+      // rows above it are its ceiling.  Nothing else draws them: a facility
+      // replaces the floor rather than standing on one - the game refuses
+      // "cannot place on top of other items" - so leaving them untouched is a
+      // transparent gap above every room, visible between any two floors
+      // except one and two, where the lobby's own full-height graphic covers
+      // it.  The strip has to be the one an empty Floor carries or the two
+      // disagree along a row: that is cell two of BITMAP/1000, whose top
+      // twelve rows are the ceiling and whose remaining twenty-four are the
+      // empty interior.
       for (int y = 0; y < kOriginalFloorHeight; ++y) {
         const int raster_y = destination_y + y;
         if (raster_y < 0 || raster_y >= raster.height) {
@@ -790,7 +794,10 @@ void render_original_direct_facilities(const OriginalResources& resources,
             continue;
           }
           const std::uint32_t color = y < top_blank_rows
-              ? blank
+              ? palette[floor_atlas.sample_index(
+                    kFloorCeilingCell * kOriginalCellWidth +
+                        positive_mod(x, kOriginalCellWidth),
+                    y)]
               : palette[source->strip.sample_index(
                     source->source_x + x, y - top_blank_rows)];
           raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
@@ -2537,9 +2544,8 @@ void render_original_vertical_transports(
   }
 }
 
-std::uint32_t sample_original_floor_atlas(
+std::uint8_t sample_original_floor_atlas_index(
     const std::array<IndexedDib, 6>& atlas,
-    const OriginalWorldPalette& palette,
     int x,
     int y) {
   if (x < 0 || y < 0 || y >= kOriginalFloorHeight) {
@@ -2547,26 +2553,23 @@ std::uint32_t sample_original_floor_atlas(
   }
   for (const auto& strip : atlas) {
     if (x < strip.view.width) {
-      return palette[strip.sample_index(x, y)];
+      return strip.sample_index(x, y);
     }
     x -= strip.view.width;
   }
   throw std::runtime_error("Original fire source exceeds its floor atlas");
 }
 
-std::uint32_t merge_original_nonzero_channels(std::uint32_t source,
-                                              std::uint32_t destination) {
+bool original_source_byte_is_opaque(std::uint8_t index) {
   // 11a0:0a11 routes one selected 36-row cache slice into 11a0:0cd9, which
-  // independently chooses the source byte when that byte is nonzero,
-  // otherwise retaining the destination byte. This is not ordinary whole-
-  // pixel transparency and is intentionally reproduced channel-wise.
-  constexpr std::array<std::uint32_t, 4> masks = {
-      0xff000000U, 0x00ff0000U, 0x0000ff00U, 0x000000ffU};
-  std::uint32_t result = 0U;
-  for (const auto mask : masks) {
-    result |= (source & mask) != 0U ? source & mask : destination & mask;
-  }
-  return result;
+  // takes the source byte when that byte is nonzero and keeps the destination
+  // byte otherwise.  Those bytes are palette indices on an eight-bit staging
+  // surface, so this is index-zero transparency - the same rule every other
+  // compositor here applies.  Reading it as a test on the *resolved colour's*
+  // channels instead makes index zero opaque, because CLUT/1000 resolves it to
+  // white, whose channels are all nonzero: every person sprite then arrives in
+  // a solid white box.
+  return index != 0U;
 }
 
 std::optional<std::uint8_t> sample_original_people_atlas_index(
@@ -2628,12 +2631,9 @@ void draw_original_facility_person(
                  : std::nullopt)
           : sample_original_facility_people_atlas_index(
                 people_atlas, source_x + x, y);
-      if (!index) continue;
-      auto& destination =
-          raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
-                        raster_x];
-      destination = merge_original_nonzero_channels(
-          palette[*index], destination);
+      if (!index || !original_source_byte_is_opaque(*index)) continue;
+      raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
+                    raster_x] = palette[*index];
     }
   }
 }
@@ -2813,15 +2813,11 @@ void render_original_security_responders(
         for (int x = 0; x < 2 * kOriginalCellWidth; ++x) {
           const auto index =
               sample_original_people_atlas_index(atlas, source_x + x, y);
-          if (!index) {
+          if (!index || !original_source_byte_is_opaque(*index)) {
             continue;
           }
-          auto& destination =
-              raster.pixels[static_cast<std::size_t>(raster_y) *
-                                raster.width +
-                            destination_x + x];
-          destination = merge_original_nonzero_channels(
-              palette[*index], destination);
+          raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
+                        destination_x + x] = palette[*index];
         }
       }
     }
@@ -2851,12 +2847,13 @@ void draw_original_fire_frame(const std::array<IndexedDib, 6>& atlas,
       if (raster_x < 0 || raster_x >= raster.width) {
         continue;
       }
-      const auto source =
-          sample_original_floor_atlas(atlas, palette, source_x + x, y);
-      auto& destination =
-          raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
-                        raster_x];
-      destination = merge_original_nonzero_channels(source, destination);
+      const auto index =
+          sample_original_floor_atlas_index(atlas, source_x + x, y);
+      if (!original_source_byte_is_opaque(index)) {
+        continue;
+      }
+      raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
+                    raster_x] = palette[index];
     }
   }
 }
