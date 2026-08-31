@@ -9163,6 +9163,8 @@ LRESULT apply_original_main_shutdown_message(
 }
 
 // Native message boundary for MAINWNDPROC at 1158:0000.
+constexpr std::int32_t kDebugBalance = 1000000000;
+
 unsigned long long g_debug_car_scans = 0;
 unsigned long long g_debug_car_changes = 0;
 
@@ -9174,6 +9176,10 @@ bool apply_original_debug_key(WPARAM key) {
     // Zero, as the New and Open paths pass: a nonzero argument forces command
     // mode two, which leaves the palette unable to build anything.
     refresh_original_rating_command(g_tower_document->header.rating, 0U);
+    // A rating without the money to use it is not much of a debug mode - every
+    // catalogue a digit unlocks costs more than the game has by then - so the
+    // digit refills the bank too.
+    g_tower_document->header.balance = kDebugBalance;
     if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
     if (g_map_window) InvalidateRect(g_map_window, nullptr, FALSE);
     request_original_main_surface_pass(
@@ -9248,7 +9254,7 @@ bool apply_original_debug_key(WPARAM key) {
     return true;
   }
   if (key == '0') {
-    g_tower_document->header.balance = 1000000000;
+    g_tower_document->header.balance = kDebugBalance;
     if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
     return true;
   }
