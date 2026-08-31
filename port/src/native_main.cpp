@@ -9180,6 +9180,26 @@ bool apply_original_debug_key(WPARAM key) {
         simtower::OriginalMainSurfacePass::rebuild_with_sky, true);
     return true;
   }
+  if (key == 'T') {
+    std::fprintf(stderr, "[tower] rating=%u lobby_height=%u pop=%d funds=%d\n",
+                 (unsigned)g_tower_document->header.rating,
+                 (unsigned)g_tower_document->header.lobby_height,
+                 (int)g_tower_document->post_elevator.finance.total_population,
+                 (int)g_tower_document->header.balance);
+    for (std::size_t index = 0; index < g_tower_document->floors.size();
+         ++index) {
+      const auto& floor = g_tower_document->floors[index];
+      if (floor.tenants.empty()) continue;
+      std::fprintf(stderr, "[tower] floor %zu (%d..%d) %zu tenants:", index,
+                   (int)floor.left_edge, (int)floor.right_edge,
+                   floor.tenants.size());
+      for (const auto& tenant : floor.tenants) {
+        std::fprintf(stderr, " %d@%d", (int)tenant.type, (int)tenant.left);
+      }
+      std::fprintf(stderr, "\n");
+    }
+    return true;
+  }
   if (key == 'E') {
     std::fprintf(stderr, "[elev] rating=%u active=%u entries=%zu\n",
                  (unsigned)g_tower_document->header.rating,

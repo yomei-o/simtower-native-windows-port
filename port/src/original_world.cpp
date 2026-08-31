@@ -1268,10 +1268,16 @@ void render_original_elevator_cars(const OriginalResources& resources,
   }
 
   for (const auto& elevator : document.elevators) {
-    // 1090:0cb3 prepares late car rectangles only for word_3c == 0. Shown
-    // shafts already include their car form in 10a8:0507 and never receive
-    // this post-Stair/Escalator overlay.
-    if (elevator.used != 0U && elevator.word_3c == 0U) {
+    // 1090:0cb3 prepares these late car rectangles for a live shaft.  word_3c
+    // is what makes a shaft live: initialize_original_elevator sets it, both
+    // shaft resizes and the service-floor gate refuse a shaft without it.  So
+    // the overlay follows it rather than opposing it - tested the other way,
+    // as `== 0`, no shaft the game can build ever gets a car drawn, and the
+    // only sign of one is the number bank in render_original_elevator_floor
+    // turning red.  That bank is one fixed graphic per floor; the sprite that
+    // moves between floors is this one, positioned by
+    // original_elevator_car_visual's interpolated y.
+    if (elevator.used != 0U && elevator.word_3c != 0U) {
       for (std::size_t car_index = 0U;
            car_index < elevator.car_records.size(); ++car_index) {
         const auto visual = original_elevator_car_visual(

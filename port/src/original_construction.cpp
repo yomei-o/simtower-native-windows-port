@@ -1988,16 +1988,7 @@ void initialize_original_elevator(OriginalTdtElevator& elevator,
             std::byte{1});
   std::fill(elevator.schedule.begin() + 14, elevator.schedule.begin() + 28,
             std::byte{5});
-  // word_3c is the Elevator Control SHOW flag, and a new shaft has it clear.
-  // Set, render_original_elevator_at_floor draws the per-floor number bank -
-  // grey, or red where a car stands - and render_original_elevator_cars skips
-  // the shaft entirely.  Those banks are one fixed graphic per floor, so a car
-  // in that mode can only ever be a number changing colour: the sprite that
-  // actually moves is the BITMAP/1064..1069 car, whose y is interpolated
-  // between floors by original_elevator_car_visual.  An elevator that never
-  // animates is not what the game does, so the default cannot be the one that
-  // makes the animation unreachable.
-  elevator.word_3c = 0;
+  elevator.word_3c = 1;
   elevator.x = x;
   elevator.top_floor = static_cast<std::int8_t>(floor);
   elevator.bottom_floor = static_cast<std::int8_t>(floor);
