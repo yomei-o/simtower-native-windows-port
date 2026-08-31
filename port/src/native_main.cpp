@@ -9171,7 +9171,9 @@ bool apply_original_debug_key(WPARAM key) {
   if (key >= '1' && key <= '6') {
     g_tower_document->header.rating =
         static_cast<std::uint16_t>(key - static_cast<WPARAM>('0'));
-    refresh_original_rating_command(g_tower_document->header.rating, 1U);
+    // Zero, as the New and Open paths pass: a nonzero argument forces command
+    // mode two, which leaves the palette unable to build anything.
+    refresh_original_rating_command(g_tower_document->header.rating, 0U);
     if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
     if (g_map_window) InvalidateRect(g_map_window, nullptr, FALSE);
     request_original_main_surface_pass(
