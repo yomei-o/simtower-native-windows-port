@@ -3144,6 +3144,32 @@ OriginalElevatorShaftExtensionResult extend_original_elevator_shaft(
   const auto actual_last = upper
       ? actual_target
       : static_cast<std::int16_t>(source.bottom_floor - 1);
+
+  // The shaft may not pass through anything.  The collision test above covers
+  // other shafts and the stairs, and the coverage pass below extends bare
+  // floor outward, but neither looks at what already stands on the floors the
+  // shaft is about to cross - so a shaft would run straight through offices.
+  // Every cell of the footprint on every newly covered floor must hold bare
+  // Floor (0) or Lobby (0x18); a negative type is a facility still under
+  // construction and refuses too.
+  for (int floor = actual_first; floor <= actual_last; ++floor) {
+    if (floor < 0 ||
+        floor >= static_cast<int>(document.floors.size())) {
+      continue;
+    }
+    const auto& record = document.floors[static_cast<std::size_t>(floor)];
+    for (const auto& tenant : record.tenants) {
+      if (tenant.right <= source.x ||
+          tenant.left >= static_cast<std::uint16_t>(source.x + width)) {
+        continue;
+      }
+      if (tenant.type != 0 && tenant.type != 0x18) {
+        return {OriginalConstructionStatus::occupied, 0, actual_target,
+                clamped};
+      }
+    }
+  }
+
   const auto actual64 = actual_first <= actual_last
       ? original_floor_extension_cost(
             document, actual_first, actual_last, source.x, right,

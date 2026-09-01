@@ -433,9 +433,26 @@ void render_original_lobbies(const OriginalResources& resources,
   for (std::size_t floor_index = 0; floor_index < document.floors.size();
        ++floor_index) {
     const auto& floor = document.floors[floor_index];
-    for (const auto& tenant : floor.tenants) {
+    for (std::size_t tenant_index = 0; tenant_index < floor.tenants.size();
+         ++tenant_index) {
+      const auto& tenant = floor.tenants[tenant_index];
       if (tenant.type != 0x18 || tenant.left >= tenant.right) {
         continue;
+      }
+
+      // The record's left edge is not necessarily the lobby's.  Extending a
+      // lobby leftwards leaves two adjacent type-24 records - the surgery in
+      // replace_original_floor_or_lobby_run keeps edge remainders by design -
+      // and the entrance tiles belong to the start of the contiguous run, not
+      // to the start of each record.  Keying them off the record drew a second
+      // entrance in the middle of the lobby after every leftward extension.
+      std::uint16_t run_left = tenant.left;
+      for (std::size_t back = tenant_index; back > 0; --back) {
+        const auto& previous = floor.tenants[back - 1U];
+        if (previous.type != 0x18 || previous.right != run_left) {
+          break;
+        }
+        run_left = previous.left;
       }
 
       std::size_t graphic = 0;
@@ -456,7 +473,7 @@ void render_original_lobbies(const OriginalResources& resources,
           view_y;
       for (std::uint32_t cell = tenant.left; cell < tenant.right; ++cell) {
         const auto cell16 = static_cast<std::uint16_t>(cell);
-        const std::size_t tile = band + original_lobby_tile(cell16, tenant.left);
+        const std::size_t tile = band + original_lobby_tile(cell16, run_left);
         draw_cgpk_tile(graphics[graphic], tile, palette,
                        static_cast<int>(cell) * kOriginalCellWidth - view_x,
                        destination_y, raster);
@@ -744,8 +761,19 @@ void render_original_direct_facilities(const OriginalResources& resources,
   // transient cache sentinel for types 18/20/21/29/34; the native direct
   // raster skips that disposable WinG cache while preserving its opaque cell
   // copy and layer position, even when the tenant status byte is zero.
-  const IndexedDib floor_atlas(resources.find("BITMAP", 1000));
-  constexpr int kFloorCeilingCell = 2;
+  // The twelve rows above a facility are the structural band, and the original
+  // draws that from BITMAP/3880 - the same four-cell hatched strip the type-45
+  // boundary tenants use - tiled on world x.  Its texture is what the real
+  // game shows between stories: the speckled concrete, the double slab line at
+  // two-thirds height, and a vertical seam every thirty-two pixels, all of
+  // which are visible in a screenshot of the original and none of which are in
+  // BITMAP/1000 cell two, the flat legend bar this used to sample.
+  const IndexedDib boundary_band(resources.find("BITMAP", 3880));
+  if (boundary_band.height != kOriginalFloorHeight ||
+      boundary_band.view.width != 4 * kOriginalCellWidth) {
+    throw std::runtime_error(
+        "Original boundary graphics have invalid dimensions");
+  }
 
   for (std::size_t floor_index = 0; floor_index < document.floors.size();
        ++floor_index) {
@@ -793,11 +821,11 @@ void render_original_direct_facilities(const OriginalResources& resources,
           if (raster_x < 0 || raster_x >= raster.width) {
             continue;
           }
+          const int world_px =
+              static_cast<int>(tenant.left) * kOriginalCellWidth + x;
           const std::uint32_t color = y < top_blank_rows
-              ? palette[floor_atlas.sample_index(
-                    kFloorCeilingCell * kOriginalCellWidth +
-                        positive_mod(x, kOriginalCellWidth),
-                    y)]
+              ? palette[boundary_band.sample_index(
+                    positive_mod(world_px, 4 * kOriginalCellWidth), y)]
               : palette[source->strip.sample_index(
                     source->source_x + x, y - top_blank_rows)];
           raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
