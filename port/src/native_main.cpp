@@ -9206,6 +9206,13 @@ bool apply_original_debug_key(WPARAM key) {
       }
       std::fprintf(stderr, "\n");
     }
+    for (std::size_t i = 0;
+         i < g_tower_document->post_elevator.stairs_bd70.size(); ++i) {
+      const auto& s = g_tower_document->post_elevator.stairs_bd70[i];
+      if (s.used == 0U) continue;
+      std::fprintf(stderr, "[tower] stair %zu shape=%u x=%u floor=%d\n", i,
+                   (unsigned)s.shape, (unsigned)s.x, (int)s.floor);
+    }
     return true;
   }
   if (key == 'E') {

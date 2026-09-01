@@ -385,7 +385,8 @@ void draw_cgpk_tile(std::span<const std::byte> cgpk,
                     const std::array<std::uint32_t, 256>& palette,
                     int destination_x,
                     int destination_y,
-                    OriginalWorldRaster& raster) {
+                    OriginalWorldRaster& raster,
+                    bool transparent = false) {
   constexpr std::size_t kTileBytes =
       static_cast<std::size_t>(kOriginalCellWidth * kOriginalFloorHeight);
   if (tile > (std::numeric_limits<std::size_t>::max() / kTileBytes) ||
@@ -405,6 +406,14 @@ void draw_cgpk_tile(std::span<const std::byte> cgpk,
       }
       const auto index = std::to_integer<std::uint8_t>(
           cgpk[source + static_cast<std::size_t>(y * kOriginalCellWidth + x)]);
+      // Lobby banks are opaque backgrounds, but the multi-story staircase
+      // frames are overlays composed onto an index-zero field: drawn opaquely
+      // they arrive in a solid white box, since CLUT/1000 resolves index zero
+      // to white.  The 11a0:0cd9 staging rule applies - keep the destination
+      // byte where the source byte is zero.
+      if (transparent && index == 0U) {
+        continue;
+      }
       raster.pixels[static_cast<std::size_t>(raster_y) * raster.width +
                     raster_x] = palette[index];
     }
@@ -2565,7 +2574,7 @@ void render_original_tall_vertical_transport(
       draw_cgpk_tile(graphics,
                      static_cast<std::size_t>(frame * 8 + cell), palette,
                      destination_x + cell * kOriginalCellWidth,
-                     destination_y, raster);
+                     destination_y, raster, true);
     }
   }
 }
