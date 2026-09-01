@@ -9260,6 +9260,43 @@ bool apply_original_debug_key(WPARAM key) {
     if (g_info_window) InvalidateRect(g_info_window, nullptr, FALSE);
     return true;
   }
+  if (key == 'H') {
+    // Housekeeping probe: every person owned by a type-15 tenant, and every
+    // hotel room with its status byte, so a scripted run can tell whether
+    // rooms ever go dirty (0x28/0x30) and whether maids ever change state.
+    const auto& doc = *g_tower_document;
+    std::fprintf(stderr, "[hk] frame_time=%u day=%u phase=%d\n",
+                 (unsigned)doc.header.frame_time,
+                 (unsigned)doc.header.current_day,
+                 (int)simtower::original_day_phase(doc.header.frame_time));
+    const auto people_limit =
+        std::min<std::size_t>(doc.people_count, doc.people.size());
+    for (std::size_t i = 0; i < people_limit; ++i) {
+      const auto& b = doc.people[i].exact_bytes;
+      const auto type =
+          (int)(std::int8_t)std::to_integer<std::uint8_t>(b[4]);
+      if (type != 15 && type != -15) continue;
+      std::fprintf(stderr,
+                   "[hk] person %zu type=%d state=%d room_floor=%d home=%d "
+                   "owner=%d/%d\n",
+                   i, type,
+                   (int)(std::int8_t)std::to_integer<std::uint8_t>(b[5]),
+                   (int)(std::int8_t)std::to_integer<std::uint8_t>(b[6]),
+                   (int)(std::int8_t)std::to_integer<std::uint8_t>(b[7]),
+                   (int)(std::int8_t)std::to_integer<std::uint8_t>(b[0]),
+                   (int)(std::int8_t)std::to_integer<std::uint8_t>(b[1]));
+    }
+    for (std::size_t index = 0; index < doc.floors.size(); ++index) {
+      for (const auto& tenant : doc.floors[index].tenants) {
+        if (tenant.type < 3 || tenant.type > 5) continue;
+        std::fprintf(stderr, "[hk] room floor=%zu left=%d type=%d status=0x%02x\n",
+                     index, (int)tenant.left, (int)tenant.type,
+                     (unsigned)std::to_integer<std::uint8_t>(
+                         tenant.exact_bytes[5]));
+      }
+    }
+    return true;
+  }
   return false;
 }
 
